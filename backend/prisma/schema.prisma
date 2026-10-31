@@ -1,0 +1,299 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_SENT
+  CONVERTED
+  DISQUALIFIED
+}
+
+enum ServiceCategory {
+  WEBSITE
+  ECOMMERCE
+  WHATSAPP_BOT
+  BRANDING
+  ERP_POS
+  EVENT_MICROSITE
+  OTHER
+}
+
+enum BudgetTier {
+  TIER_15K_30K    // ₹15k – ₹30k
+  TIER_30K_60K    // ₹30k – ₹60k
+  TIER_60K_120K   // ₹60k – ₹1.2L
+  TIER_120K_PLUS  // ₹1.2L+
+  DISCUSS         // Discuss Scope
+}
+
+enum TimelineTier {
+  UNDER_2_WEEKS
+  WEEKS_2_TO_4
+  MONTHS_1_TO_2
+  FLEXIBLE
+}
+
+enum LeadSource {
+  WEBSITE_SCOPER
+  WHATSAPP_DIRECT
+  PHONE_INQUIRY
+  REFERRAL
+  MANUAL
+}
+
+enum DealStage {
+  DISCOVERY
+  PROPOSAL_DRAFTED
+  PROPOSAL_SENT
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum TaskType {
+  CALL
+  WHATSAPP_FOLLOW_UP
+  SEND_PROPOSAL
+  MEETING
+  DEADLINE
+}
+
+enum Priority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TaskStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum ActivityType {
+  NOTE
+  CALL_LOG
+  WHATSAPP_SENT
+  STAGE_CHANGE
+  SYSTEM_EVENT
+}
+
+// ─────────────────────────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  name         String
+  passwordHash String
+  role         Role       @default(EMPLOYEE)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  assignedLeads Lead[]     @relation("LeadAssignee")
+  managedDeals  Deal[]     @relation("DealAssignee")
+  assignedTasks Task[]     @relation("TaskAssignee")
+  activities    Activity[] @relation("ActivityCreator")
+
+  @@index([email])
+  @@index([role])
+}
+
+model Lead {
+  id                     String          @id @default(uuid())
+  firstName              String
+  lastName               String?
+  phone                  String
+  email                  String?
+  companyName            String?
+  service                ServiceCategory @default(WEBSITE)
+  budget                 BudgetTier      @default(TIER_30K_60K)
+  timeline               TimelineTier    @default(WEEKS_2_TO_4)
+  notes                  String?         @db.Text
+  status                 LeadStatus      @default(NEW)
+  disqualificationReason String?
+  source                 LeadSource      @default(WEBSITE_SCOPER)
+  rawPayload             Json?
+
+  assignedUserId         String?
+  assignedUser           User?           @relation("LeadAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  convertedContactId     String?         @unique
+  convertedContact       Contact?        @relation("LeadConversion", fields: [convertedContactId], references: [id], onDelete: SetNull)
+
+  activities             Activity[]
+  tasks                  Task[]
+
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  @@index([phone])
+  @@index([status])
+  @@index([assignedUserId])
+  @@index([createdAt])
+}
+
+model Account {
+  id            String     @id @default(uuid())
+  name          String
+  industry      String?
+  website       String?
+  gstin         String?
+  city          String?    @default("Vaniyambadi")
+  state         String?    @default("Tamil Nadu")
+  country       String?    @default("India")
+  lifetimeValue Decimal    @default(0.0) @db.Decimal(12, 2)
+
+  contacts      Contact[]
+  deals         Deal[]
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([name])
+}
+
+model Contact {
+  id            String     @id @default(uuid())
+  accountId     String
+  account       Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  firstName     String
+  lastName      String?
+  phone         String
+  email         String?
+  designation   String?
+  isPrimary     Boolean    @default(false)
+
+  convertedLead Lead?      @relation("LeadConversion")
+  deals         Deal[]     @relation("PrimaryContact")
+  activities    Activity[]
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([phone])
+  @@index([accountId])
+}
+
+model Deal {
+  id                String          @id @default(uuid())
+  title             String
+  accountId         String
+  account           Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  contactId         String
+  contact           Contact         @relation("PrimaryContact", fields: [contactId], references: [id], onDelete: Restrict)
+
+  assignedUserId    String
+  assignedUser      User            @relation("DealAssignee", fields: [assignedUserId], references: [id], onDelete: Restrict)
+
+  service           ServiceCategory @default(WEBSITE)
+  dealValue         Decimal         @default(0.0) @db.Decimal(12, 2)
+  stage             DealStage       @default(DISCOVERY)
+  probability       Int             @default(20)
+  expectedCloseDate DateTime?
+  lostReason        String?
+
+  quotes            Quote[]
+  tasks             Task[]
+  activities        Activity[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([stage])
+  @@index([assignedUserId])
+  @@index([accountId])
+  @@index([createdAt])
+}
+
+model Task {
+  id             String     @id @default(uuid())
+  title          String
+  type           TaskType   @default(CALL)
+  dueDate        DateTime
+  priority       Priority   @default(MEDIUM)
+  status         TaskStatus @default(PENDING)
+
+  assignedUserId String
+  assignedUser   User       @relation("TaskAssignee", fields: [assignedUserId], references: [id], onDelete: Cascade)
+
+  leadId         String?
+  lead           Lead?      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  dealId         String?
+  deal           Deal?      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  completedAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([assignedUserId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model Activity {
+  id        String       @id @default(uuid())
+  type      ActivityType
+  content   String       @db.Text
+  metadata  Json?
+
+  userId    String
+  user      User         @relation("ActivityCreator", fields: [userId], references: [id], onDelete: Restrict)
+
+  leadId    String?
+  lead      Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  dealId    String?
+  deal      Deal?        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  contactId String?
+  contact   Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime     @default(now())
+
+  @@index([leadId])
+  @@index([dealId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Quote {
+  id          String   @id @default(uuid())
+  quoteNumber String   @unique // e.g. "AG-2026-0042"
+  dealId      String
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  totalAmount Decimal  @default(0.0) @db.Decimal(12, 2)
+  items       Json     // Array of line items: [{ title, description, amount }]
+  validUntil  DateTime
+  isAccepted  Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([dealId])
+}
+

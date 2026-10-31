@@ -1,0 +1,14 @@
+{
+  "name": "agnigrow-crm-monorepo",
+  "version": "1.0.0",
+  "description": "AgniGrow CRM Full-Stack Architecture (Decoupled Next.js Frontend + Express REST API Backend)",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "seed:backend": "cd backend && npm run seed"
+  }
+}
+
